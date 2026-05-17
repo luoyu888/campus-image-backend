@@ -3,15 +3,20 @@ package com.campus.demo.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.campus.demo.common.Result;
+import com.campus.demo.dto.TagDTO;
 import com.campus.demo.entity.Image;
 import com.campus.demo.service.ImageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/image")
-@CrossOrigin  // 允许前端跨域访问
+@CrossOrigin
 public class ImageController {
 
     @Autowired
@@ -19,7 +24,6 @@ public class ImageController {
 
     /**
      * 上传影像
-     * POST /api/image/upload
      */
     @PostMapping("/upload")
     public Result<String> uploadImage(
@@ -37,7 +41,6 @@ public class ImageController {
 
     /**
      * 获取影像列表（分页）
-     * GET /api/image/list?page=1&size=10&category=activity
      */
     @GetMapping("/list")
     public Result<Page<Image>> getImageList(
@@ -48,12 +51,9 @@ public class ImageController {
         Page<Image> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<Image> wrapper = new LambdaQueryWrapper<>();
 
-        // 按分类筛选
         if (category != null && !category.isEmpty()) {
             wrapper.eq(Image::getCategory, category);
         }
-
-        // 按上传时间倒序
         wrapper.orderByDesc(Image::getUploadTime);
 
         Page<Image> imagePage = imageService.page(pageParam, wrapper);
@@ -62,13 +62,11 @@ public class ImageController {
 
     /**
      * 获取影像详情
-     * GET /api/image/{id}
      */
     @GetMapping("/{id}")
     public Result<Image> getImageDetail(@PathVariable Long id) {
         Image image = imageService.getById(id);
         if (image != null) {
-            // 增加浏览次数
             image.setViewCount(image.getViewCount() + 1);
             imageService.updateById(image);
             return Result.success(image);
@@ -78,7 +76,6 @@ public class ImageController {
 
     /**
      * 删除影像
-     * DELETE /api/image/{id}
      */
     @DeleteMapping("/{id}")
     public Result<String> deleteImage(@PathVariable Long id) {
@@ -90,13 +87,105 @@ public class ImageController {
     }
 
     /**
-     * 按分类获取影像数量统计
-     * GET /api/image/statistics
+     * 更新影像标签
+     */
+    @PutMapping("/tags")
+    public Result<String> updateTags(@RequestBody TagDTO tagDTO) {
+        Image image = imageService.getById(tagDTO.getImageId());
+        if (image != null) {
+            String tagsStr = String.join(",", tagDTO.getTags());
+            image.setTags(tagsStr);
+            imageService.updateById(image);
+            return Result.success("标签更新成功");
+        }
+        return Result.error("影像不存在");
+    }
+
+    /**
+     * 按标签搜索影像
+     */
+    @GetMapping("/search")
+    public Result<Page<Image>> searchByTag(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer size) {
+
+        Page<Image> pageParam = new Page<>(page, size);
+        LambdaQueryWrapper<Image> wrapper = new LambdaQueryWrapper<>();
+        wrapper.like(Image::getTags, keyword)
+                .or()
+                .like(Image::getName, keyword)
+                .orderByDesc(Image::getUploadTime);
+
+        return Result.success(imageService.page(pageParam, wrapper));
+    }
+
+    /**
+     * 获取热门标签
+     */
+    @GetMapping("/hot-tags")
+    public Result<List<Map<String, Object>>> getHotTags() {
+        List<Image> images = imageService.list();
+        Map<String, Integer> tagCount = new HashMap<>();
+
+        for (Image image : images) {
+            if (image.getTags() != null && !image.getTags().isEmpty()) {
+                String[] tags = image.getTags().split(",");
+                for (String tag : tags) {
+                    String trimmedTag = tag.trim();
+                    if (!trimmedTag.isEmpty()) {
+                        tagCount.put(trimmedTag, tagCount.getOrDefault(trimmedTag, 0) + 1);
+                    }
+                }
+            }
+        }
+
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Map.Entry<String, Integer> entry : tagCount.entrySet()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("name", entry.getKey());
+            item.put("count", entry.getValue());
+            result.add(item);
+        }
+
+        result.sort((a, b) -> Integer.compare((int) b.get("count"), (int) a.get("count")));
+
+        if (result.size() > 10) {
+            result = result.subList(0, 10);
+        }
+
+        return Result.success(result);
+    }
+
+    /**
+     * 点赞影像
+     */
+    @PostMapping("/like/{id}")
+    public Result<String> likeImage(@PathVariable Long id) {
+        Image image = imageService.getById(id);
+        if (image != null) {
+            image.setLikeCount(image.getLikeCount() == null ? 1 : image.getLikeCount() + 1);
+            imageService.updateById(image);
+            return Result.success("点赞成功");
+        }
+        return Result.error("影像不存在");
+    }
+
+    /**
+     * 按分类统计数量
      */
     @GetMapping("/statistics")
-    public Result<Object> getStatistics() {
-        LambdaQueryWrapper<Image> wrapper = new LambdaQueryWrapper<>();
-        wrapper.select(Image::getCategory, Image::getViewCount);
-        return Result.success(imageService.list(wrapper));
+    public Result<Map<String, Long>> getStatistics() {
+        List<Image> images = imageService.list();
+        Map<String, Long> statistics = new HashMap<>();
+
+        for (Image image : images) {
+            String category = image.getCategory();
+            if (category != null) {
+                statistics.put(category, statistics.getOrDefault(category, 0L) + 1);
+            }
+        }
+
+        return Result.success(statistics);
     }
 }

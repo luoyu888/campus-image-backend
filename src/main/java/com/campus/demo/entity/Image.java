@@ -13,9 +13,13 @@ public class Image {
     private String url;
     private String thumbnailUrl;
     private String category;
+    private String tags;          // 添加这个
+    private String description;   // 添加这个
     private Long uploaderId;
     private LocalDateTime uploadTime;
     private Long viewCount;
+    private Long likeCount;       // 添加这个
+    private Long downloadCount;   // 添加这个
     @TableLogic
     private Integer deleted;
 }
